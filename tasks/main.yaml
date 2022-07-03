@@ -1,52 +1,45 @@
-- name: 获取redis目录
+- name: 获取变量
+  shell: |
+    {% for host,host_value in info.iteritems() %}
+    {% if host == inventory_hostname %}
+     echo {{host_value.master.port}}
+     echo {{host_value.slave.port}}
+    {% endif %}
+    {% endfor %}
+  register: result
+- name: 赋值
   set_fact:
-    "{{item.key}}": "{{item.value}}"
-  with_dict: "{{master}}"
-  when: inventory_hostname == "master"
-- set_fact:
-    "{{item.key}}": "{{item.value}}"
-  with_dict: "{{node01}}"
-  when: inventory_hostname == "node01"
-- set_fact:
-    "{{item.key}}": "{{item.value}}"
-  with_dict: "{{node02}}"
-  when: inventory_hostname == "node02"
-- name: 获取redis版本
-  set_fact: 
-    version: "{{item | basename}}"
-  with_fileglob:
-  - "*.gz"
-- debug:
-    msg: "{{version}}"
+    master_port: "{{result.stdout.split('\n').0}}"
+    slave_port: "{{result.stdout.split('\n').1}}"
 - name: 分发文件
   copy: 
-    src="{{version}}" 
+    src="{{package}}" 
     dest="{{tmp_dir}}"
 - debug:
-    msg: "{{tmp_dir}}/{{version}}"
+    msg: "{{tmp_dir}}/{{package}}"
 - name: 创建目录
   block:
   - file:
-      path: "{{redis_home}}_{{master.port}}"
+      path: "{{redis_home}}_{{master_port}}"
       state: directory
   - file:
-      path: "{{redis_home}}_{{slave.port}}"
+      path: "{{redis_home}}_{{slave_port}}"
       state: directory
 - name: 解压文件
   block:
   - unarchive:
-      src: "{{tmp_dir}}/{{version}}"
-      dest: "{{redis_home}}_{{master.port}}"
+      src: "{{tmp_dir}}/{{package}}"
+      dest: "{{redis_home}}_{{master_port}}"
   - unarchive:
-      src: "{{tmp_dir}}/{{version}}"
-      dest: "{{redis_home}}_{{slave.port}}"
+      src: "{{tmp_dir}}/{{package}}"
+      dest: "{{redis_home}}_{{slave_port}}"
 - name: print
   debug:
-    msg: "{{redis_home}}/{{version}}"
+    msg: "{{redis_home}}/{{package}}"
 - name: 获取redis安装目录
   set_fact: 
-    install_dir_master: '{{redis_home}}_{{master.port}}/{{version  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
-    install_dir_slave: '{{redis_home}}_{{slave.port}}/{{version  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
+    install_dir_master: '{{redis_home}}_{{master_port}}/{{package  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
+    install_dir_slave: '{{redis_home}}_{{slave_port}}/{{package  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
 - name: print install_dir
   debug:
     msg: "{{install_dir_master}}"
@@ -55,32 +48,13 @@
 - name: 复制模板
   block:
   - template:
-      src: "redis.conf"
-      dest: "{{install_dir_master}}/redis_{{master.port}}.conf"
-      backup: yes
+      src: "redis_master.conf"
+      dest: "{{install_dir_master}}/redis_{{master_port}}.conf"
     #notify: 启动redis  
   - template:
-      src: "redis.conf"
-      dest: "{{install_dir_slave}}/redis_{{slave.port}}.conf"
-      backup: yes
-    #notify: 启动redis  
-  - blockinfile:
-      path: "{{install_dir_master}}/redis_{{master.port}}.conf"
-      block: | 
-          port {{master.port}}
-          pidfile /var/run/redis_{{master.port}}.pid
-          cluster-config-file {{install_dir_master}}/nodes-{{master.port}}.conf
-          dir {{install_dir_master}}
-    #notify: 启动redis  
-  - blockinfile:
-      path: "{{install_dir_slave}}/redis_{{slave.port}}.conf"
-      block: |
-          port {{slave.port}}
-          pidfile /var/run/redis_{{slave.port}}.pid
-          cluster-config-file {{install_dir_slave}}/nodes-{{slave.port}}.conf
-          dir {{install_dir_slave}}
-    #notify: 启动redis  
+      src: "redis_slave.conf"
+      dest: "{{install_dir_slave}}/redis_{{slave_port}}.conf"
 - name: 启动master redis
-  shell: "{{install_dir_master}}/src/redis-server {{install_dir_master}}/redis_{{master.port}}.conf"
+  shell: "{{install_dir_master}}/src/redis-server {{install_dir_master}}/redis_{{master_port}}.conf"
 - name: 启动slave redis
-  shell: "{{install_dir_slave}}/src/redis-server {{install_dir_slave}}/redis_{{slave.port}}.conf"
+  shell: "{{install_dir_slave}}/src/redis-server {{install_dir_slave}}/redis_{{slave_port}}.conf"
