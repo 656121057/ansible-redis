@@ -1,0 +1,18 @@
+tmp_dir: /home
+redis_home: /opt/redis
+info:
+  master: 
+    master:
+      port: 7000
+    slave:
+      port: 7001
+  node01: 
+    master:
+      port: 7002
+    slave:
+      port: 7003
+  node02: 
+    master:
+      port: 7004
+    slave:
+      port: 7005

@@ -1,0 +1,67 @@
+- name: 获取变量
+  shell: |
+    {% for host,host_value in test.iteritems() %}
+    {% if host == inventory_hostname %}
+     echo {{host_value.master.port}}
+     echo {{host_value.slave.port}}
+    {% endif %}
+    {% endfor %}
+  register: result
+- name: 赋值
+  set_fact:
+    master_port: "{{result.stdout.split('\n').0}}"
+    slave_port: "{{result.stdout.split('\n').1}}"
+- name: 获取redis版本
+  set_fact: 
+    version: "{{item | basename}}"
+  with_fileglob:
+  - "*.gz"
+- debug:
+    msg: "{{version}}"
+- name: 分发文件
+  copy: 
+    src="{{version}}" 
+    dest="{{tmp_dir}}"
+- debug:
+    msg: "{{tmp_dir}}/{{version}}"
+- name: 创建目录
+  block:
+  - file:
+      path: "{{redis_home}}_{{master_port}}"
+      state: directory
+  - file:
+      path: "{{redis_home}}_{{slave_port}}"
+      state: directory
+- name: 解压文件
+  block:
+  - unarchive:
+      src: "{{tmp_dir}}/{{version}}"
+      dest: "{{redis_home}}_{{master_port}}"
+  - unarchive:
+      src: "{{tmp_dir}}/{{version}}"
+      dest: "{{redis_home}}_{{slave_port}}"
+- name: print
+  debug:
+    msg: "{{redis_home}}/{{version}}"
+- name: 获取redis安装目录
+  set_fact: 
+    install_dir_master: "{{redis_home}}_{{master_port}}/{{version  | regex_replace('(.*).tar.gz$', '\\1')}}"
+    install_dir_slave: "{{redis_home}}_{{slave_port}}/{{version  | regex_replace('(.*).tar.gz$', '\\1')}}"
+- name: print install_dir
+  debug:
+    msg: "{{install_dir_master}}"
+- name: 编译
+  shell: cd {{install_dir_master}};make;cd {{install_dir_slave}};make
+- name: 复制模板
+  block:
+  - template:
+      src: "redis_master.conf"
+      dest: "{{install_dir_master}}/redis_{{master_port}}.conf"
+    #notify: 启动redis  
+  - template:
+      src: "redis_slave.conf"
+      dest: "{{install_dir_slave}}/redis_{{slave_port}}.conf"
+- name: 启动master redis
+  shell: "{{install_dir_master}}/src/redis-server {{install_dir_master}}/redis_{{master_port}}.conf"
+- name: 启动slave redis
+  shell: "{{install_dir_slave}}/src/redis-server {{install_dir_slave}}/redis_{{slave_port}}.conf"
