@@ -1,0 +1,86 @@
+- name: 获取redis目录
+  set_fact:
+    "{{item.key}}": "{{item.value}}"
+  with_dict: "{{master}}"
+  when: inventory_hostname == "master"
+- set_fact:
+    "{{item.key}}": "{{item.value}}"
+  with_dict: "{{node01}}"
+  when: inventory_hostname == "node01"
+- set_fact:
+    "{{item.key}}": "{{item.value}}"
+  with_dict: "{{node02}}"
+  when: inventory_hostname == "node02"
+- name: 获取redis版本
+  set_fact: 
+    version: "{{item | basename}}"
+  with_fileglob:
+  - "*.gz"
+- debug:
+    msg: "{{version}}"
+- name: 分发文件
+  copy: 
+    src="{{version}}" 
+    dest="{{tmp_dir}}"
+- debug:
+    msg: "{{tmp_dir}}/{{version}}"
+- name: 创建目录
+  block:
+  - file:
+      path: "{{redis_home}}_{{master.port}}"
+      state: directory
+  - file:
+      path: "{{redis_home}}_{{slave.port}}"
+      state: directory
+- name: 解压文件
+  block:
+  - unarchive:
+      src: "{{tmp_dir}}/{{version}}"
+      dest: "{{redis_home}}_{{master.port}}"
+  - unarchive:
+      src: "{{tmp_dir}}/{{version}}"
+      dest: "{{redis_home}}_{{slave.port}}"
+- name: print
+  debug:
+    msg: "{{redis_home}}/{{version}}"
+- name: 获取redis安装目录
+  set_fact: 
+    install_dir_master: '{{redis_home}}_{{master.port}}/{{version  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
+    install_dir_slave: '{{redis_home}}_{{slave.port}}/{{version  | regex_search("redis-[0-9]+\.[0-9]+\.[0-9]+")}}'
+- name: print install_dir
+  debug:
+    msg: "{{install_dir_master}}"
+- name: 编译
+  shell: cd {{install_dir_master}};make;cd {{install_dir_slave}};make
+- name: 复制模板
+  block:
+  - template:
+      src: "redis.conf"
+      dest: "{{install_dir_master}}/redis_{{master.port}}.conf"
+      backup: yes
+    #notify: 启动redis  
+  - template:
+      src: "redis.conf"
+      dest: "{{install_dir_slave}}/redis_{{slave.port}}.conf"
+      backup: yes
+    #notify: 启动redis  
+  - blockinfile:
+      path: "{{install_dir_master}}/redis_{{master.port}}.conf"
+      block: | 
+          port {{master.port}}
+          pidfile /var/run/redis_{{master.port}}.pid
+          cluster-config-file {{install_dir_master}}/nodes-{{master.port}}.conf
+          dir {{install_dir_master}}
+    #notify: 启动redis  
+  - blockinfile:
+      path: "{{install_dir_slave}}/redis_{{slave.port}}.conf"
+      block: |
+          port {{slave.port}}
+          pidfile /var/run/redis_{{slave.port}}.pid
+          cluster-config-file {{install_dir_slave}}/nodes-{{slave.port}}.conf
+          dir {{install_dir_slave}}
+    #notify: 启动redis  
+- name: 启动master redis
+  shell: "{{install_dir_master}}/src/redis-server {{install_dir_master}}/redis_{{master.port}}.conf"
+- name: 启动slave redis
+  shell: "{{install_dir_slave}}/src/redis-server {{install_dir_slave}}/redis_{{slave.port}}.conf"
