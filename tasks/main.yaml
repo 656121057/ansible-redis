@@ -1,6 +1,6 @@
 - name: 获取变量
   shell: |
-    {% for host,host_value in test.iteritems() %}
+    {% for host,host_value in info.iteritems() %}
     {% if host == inventory_hostname %}
      echo {{host_value.master.port}}
      echo {{host_value.slave.port}}
